@@ -1,4 +1,6 @@
 # Snake DIY
+![alt text](image.png)
+
 
 A classic Snake game developed in Python 3 using Pygame.
 
@@ -29,16 +31,24 @@ You can customize the game settings in `config.json`.
     - `solid_walls`: `true` for game over on wall hit, `false` for wrap-around.
     - `score_per_move`: Points earned per move.
     - `score_per_food`: Points earned per food eaten.
+    - `pixel_movement`: `true` for smooth movement, `false` for grid-based.
+    - `pixel_speed`: Speed in pixels per frame (for smooth movement).
 - **audio**: Enable/disable sound and set volume.
 
 ## Controls
 
 - **Arrow Keys**: Move the snake.
 - **Same Direction**: Hold the key for the current direction to accelerate.
+- **P**: Pause/Resume game.
+- **L**: Toggle Leaderboard (pauses game).
 - **R**: Restart game (when Game Over).
 - **ESC**: Quit game.
 
 ## Features
 
-- **Leaderboard**: Top 10 scores are saved in `leaderboard.json`.
-- **Sound Effects**: Place an `eat.wav` file in the `assets` folder to enable sound.
+- **Smooth Movement**: Pixel-based movement for a fluid experience (configurable).
+- **Leaderboard**: Top 10 scores with player names saved to `leaderboard.json`.
+- **Multiple Food**: Food count increases as your score gets higher.
+- **Precise Growth**: Snake grows exactly one block per food item.
+- **Sound Effects**: Support for `assets/eat.wav`.
+- **Configurable**: Customize colors, speed, window size, and more in `config.json`.
