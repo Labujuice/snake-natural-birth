@@ -31,7 +31,9 @@
         "block_size": 20,
         "solid_walls": false,
         "score_per_move": 0,
-        "score_per_food": 10
+        "score_per_food": 10,
+        "pixel_movement": true,
+        "pixel_speed": 3
     },
     "audio": {
         "volume": 0.5,
