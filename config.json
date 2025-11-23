@@ -1,0 +1,40 @@
+{
+    "window": {
+        "width": 800,
+        "height": 600,
+        "title": "Snake DIY"
+    },
+    "colors": {
+        "snake": [
+            0,
+            255,
+            0
+        ],
+        "food": [
+            255,
+            0,
+            0
+        ],
+        "background": [
+            0,
+            0,
+            0
+        ],
+        "text": [
+            255,
+            255,
+            255
+        ]
+    },
+    "game": {
+        "speed": 10,
+        "block_size": 20,
+        "solid_walls": false,
+        "score_per_move": 0,
+        "score_per_food": 10
+    },
+    "audio": {
+        "volume": 0.5,
+        "enabled": true
+    }
+}
