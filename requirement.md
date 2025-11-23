@@ -3,7 +3,7 @@
 以 Python3 開發一個 貪食蛇遊戲，使用 pygame 作為遊戲引擎。
 
 ## requirement(User Story)
-
+**下列工作完成後請協助打勾**
 - [ ] 以 Python3 為開發語言
 - [ ] 使用 pygame 作為遊戲引擎
 - [ ] 使用英文顯示
@@ -17,3 +17,6 @@
 - [ ] 需要撰寫 README.md 文件, 並在其中說明如何安裝和運行遊戲
 
 
+## Requirement generate by progress tracking
+**下列需求請依據開發過程中衍生的需求新增並且加以管理, 完成打勾**
+- [ ] TBD...
