@@ -40,14 +40,21 @@ class Snake:
                 if (new_dir.value[0] * -1 != self.direction.value[0] or 
                     new_dir.value[1] * -1 != self.direction.value[1]):
                     
-                    if new_dir == self.direction:
-                        self.speed_multiplier = 1.5 # Accelerate
-                    else:
+                    if new_dir != self.direction:
                         self.next_direction = new_dir
-                        self.speed_multiplier = 1.0 # Reset speed on turn
 
     def update(self):
         self.direction = self.next_direction
+        
+        # Check for acceleration (hold key for current direction)
+        keys = pygame.key.get_pressed()
+        if ((self.direction == Direction.UP and keys[pygame.K_UP]) or
+            (self.direction == Direction.DOWN and keys[pygame.K_DOWN]) or
+            (self.direction == Direction.LEFT and keys[pygame.K_LEFT]) or
+            (self.direction == Direction.RIGHT and keys[pygame.K_RIGHT])):
+            self.speed_multiplier = 1.5
+        else:
+            self.speed_multiplier = 1.0
         
         head_x, head_y = self.body[0]
         dx, dy = self.direction.value
