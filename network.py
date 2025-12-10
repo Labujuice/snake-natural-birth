@@ -109,6 +109,14 @@ class SnakeNetwork:
         self.lock = threading.Lock()
         self.my_id = None # Assigned by server
 
+    def stop(self):
+        self.running = False
+        try:
+            if self.sock:
+                self.sock.close()
+        except:
+            pass
+
     def start_host(self, port=5555):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # Allow reuse

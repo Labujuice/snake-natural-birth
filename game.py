@@ -12,7 +12,9 @@ STATE_MENU = 0
 STATE_HOST_SETUP = 1
 STATE_JOIN_SETUP = 2
 STATE_PLAYING = 3
-STATE_GAME_OVER = 4
+STATE_NAME_INPUT = 5
+STATE_LOBBY = 6
+
 
 class Game:
     def __init__(self):
@@ -39,6 +41,13 @@ class Game:
                 self.eat_sound.set_volume(self.config['audio']['volume'])
             else:
                 print(f"Warning: Sound file {sound_path} not found.")
+
+        self.colors = [
+            (0, 255, 0),    # Green (P1)
+            (255, 0, 255),  # Magenta/Purple (P2) - Replaced Red
+            (0, 0, 255),    # Blue (P3)
+            (255, 255, 0),  # Yellow (P4)
+        ]
 
     def reset_game(self, full_reset=False):
         if full_reset:
@@ -73,13 +82,14 @@ class Game:
         self.connection_ip = "127.0.0.1"
         self.connection_port = "5555"
         self.player_name = "Player"
+        self.lobby_players = [] # List of strings "ID: Name"
 
     def run(self):
         while True:
             self.handle_events()
             
-            if self.state == STATE_PLAYING:
-                if not self.game_over and not self.paused:
+            if self.state == STATE_PLAYING or self.state == STATE_LOBBY:
+                if not self.paused:
                     self.update()
             
             self.draw()
@@ -91,8 +101,7 @@ class Game:
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                self.quit_game()
             elif event.type == pygame.KEYDOWN:
                 if self.state == STATE_MENU:
                     if event.key == pygame.K_UP:
@@ -117,6 +126,55 @@ class Game:
                     else:
                         if self.input_active and len(self.input_text) < 20:
                             self.input_text += event.unicode
+                
+                elif self.state == STATE_NAME_INPUT:
+                    if event.key == pygame.K_RETURN:
+                        if self.input_text.strip():
+                            self.player_name = self.input_text
+                            self.input_active = False
+                            # Proceed to text selection
+                            # Simplify: Name Input -> Main Menu ? No, we need menu first.
+                            # Flow: Menu -> [Single/Host/Join] -> If Host/Join -> Name Input -> Host/Join Setup
+                            
+                            # Let's say we store 'next_state'
+                            if hasattr(self, 'next_state'):
+                                self.state = self.next_state
+                                if self.state == STATE_HOST_SETUP:
+                                    self.input_text = "5555"
+                                    self.input_active = True
+                                elif self.state == STATE_JOIN_SETUP:
+                                    self.input_text = "127.0.0.1:5555"
+                                    self.input_active = True
+                            else:
+                                self.state = STATE_MENU
+                                
+                    elif event.key == pygame.K_BACKSPACE:
+                        self.input_text = self.input_text[:-1]
+                    else:
+                        if len(self.input_text) < 15:
+                            self.input_text += event.unicode
+
+                elif self.state == STATE_LOBBY:
+                    if event.key == pygame.K_ESCAPE:
+                        self.state = STATE_MENU
+                        self.network = None # Disconnect
+                        self.reset_game(full_reset=True)
+                    elif event.key == pygame.K_RETURN:
+                        if self.is_server:
+                            # Start Game
+                            # Start Game
+                            if self.network:
+                                # Spawn initial food ensuring it doesn't hit snakes
+                                all_bodies = []
+                                for s in self.snakes.values():
+                                    all_bodies.extend(s.body)
+                                self.food.spawn(all_bodies, 1)
+                                
+                                self.network.send_update({"type": "start_game"}) # Broadcast start
+                                self.state = STATE_PLAYING
+                                # Should receive its own message?
+                                # For local host, force state change
+                                pass
 
                 elif self.state == STATE_PLAYING:
                     if self.game_over:
@@ -202,12 +260,36 @@ class Game:
                     if pid not in self.snakes:
                         # Spawn new snake
                         start_pos = (self.width // 2 + pid * 20, self.height // 2 + pid * 20) # Offset
-                        self.snakes[pid] = Snake(self.config, start_pos, pid, f"Player {pid}")
+                        name = f"Player {pid}"
+                        self.snakes[pid] = Snake(self.config, start_pos, pid, name)
+                        # Assign color
+                        color_idx = pid % len(self.colors)
+                        self.snakes[pid].color = self.colors[color_idx]
+                        
+                        # Add to lobby list
+                        if pid not in [p['id'] for p in self.lobby_players if isinstance(p, dict)]:
+                            self.lobby_players.append({'id': pid, 'name': name})
+                
+                # Handling Lobby Start
+                if self.state == STATE_LOBBY:
+                    # Host just broadcasts lobby state?
+                    # Or we just rely on 'state' updates which contain snakes?
+                    # Snakes are created upon join. So 'snakes' dict exists.
+                    # Send lobby-specific update?
+                    lobby_data = {
+                        "type": "lobby",
+                        "players": [{"id": s.id, "name": s.name} for s in self.snakes.values()]
+                    }
+                    self.network.send_update(lobby_data)
                 
             else: # Client
                 # Process Server State
                 for event in events:
-                    if event['type'] == 'state':
+                    if event['type'] == 'lobby':
+                        self.lobby_players = event['players']
+                    elif event['type'] == 'start_game':
+                        self.state = STATE_PLAYING
+                    elif event['type'] == 'state':
                         # Update Snakes
                         server_snakes = event['snakes']
                         current_ids = []
@@ -235,7 +317,8 @@ class Game:
                             self.local_player_id = self.network.my_id
 
         # Update Logic (Server Only or Single Player)
-        if not self.network or self.is_server:
+        # Only run physics/logic if we are actually PLAYING
+        if self.state == STATE_PLAYING and (not self.network or self.is_server):
             # Update all snakes
             dead_snakes = []
             
@@ -318,22 +401,45 @@ class Game:
                 }
                 self.network.send_update(state)
 
+                self.network.send_update(state)
+
+    def check_leaderboard(self):
+        leaderboard = load_leaderboard()
+        # Check if score qualifies for top 10
+        if len(leaderboard) < 10 or (leaderboard and self.score > leaderboard[-1]['score']):
+            self.input_active = True
+            self.input_text = ""
+        else:
+            self.input_active = False
+
+    def save_score(self, name):
+        leaderboard = load_leaderboard()
+        leaderboard.append({'name': name, 'score': self.score})
+        save_leaderboard(leaderboard)
+
     def handle_menu_selection(self):
         choice = self.menu_options[self.menu_index]
         if choice == "Single Player":
             self.state = STATE_PLAYING
             self.reset_game(full_reset=False) # Setup single player
         elif choice == "Host Game":
-            self.state = STATE_HOST_SETUP
-            self.input_text = "5555" # Default port
+            self.next_state = STATE_HOST_SETUP
+            self.state = STATE_NAME_INPUT
+            self.input_text = self.player_name
             self.input_active = True
         elif choice == "Join Game":
-            self.state = STATE_JOIN_SETUP
-            self.input_text = "127.0.0.1" # Default IP
+            self.next_state = STATE_JOIN_SETUP
+            self.state = STATE_NAME_INPUT
+            self.input_text = self.player_name
             self.input_active = True
         elif choice == "Quit":
-            pygame.quit()
-            sys.exit()
+            self.quit_game()
+
+    def quit_game(self):
+        if self.network:
+            self.network.stop()
+        pygame.quit()
+        sys.exit()
 
     def start_multiplayer(self):
         if self.state == STATE_HOST_SETUP:
@@ -345,19 +451,36 @@ class Game:
                 self.local_player_id = 0
                 self.snakes = {}
                 start_pos = (self.width // 2, self.height // 2)
-                self.snakes[0] = Snake(self.config, start_pos, 0, "Host")
-                self.state = STATE_PLAYING
+                # Host is ID 0
+                self.snakes[0] = Snake(self.config, start_pos, 0, self.player_name)
+                self.snakes[0].color = self.colors[0]
+                
+                self.state = STATE_LOBBY
                 self.input_active = False
             except ValueError:
                 print("Invalid Port")
         elif self.state == STATE_JOIN_SETUP:
-            ip = self.input_text
+            # parsing ip:port
+            target = self.input_text
+            ip = "127.0.0.1"
+            port = 5555
+            if ":" in target:
+                parts = target.split(":")
+                ip = parts[0]
+                try:
+                    port = int(parts[1])
+                except:
+                    pass
+            else:
+                ip = target
+            
             self.network = SnakeNetwork(side="client")
-            if self.network.connect(ip, 5555): # Hardcoded port for join for simplicity or split input
+            if self.network.connect(ip, port):
                  self.is_server = False
-                 self.state = STATE_PLAYING
+                 self.state = STATE_LOBBY # Wait in lobby
                  self.input_active = False
-                 # Wait for ID assignment / State
+                 # Send Init with Name
+                 self.network.send_input({"type": "init", "name": self.player_name})
                  self.snakes = {} 
             else:
                  print("Connection Failed")
@@ -375,22 +498,65 @@ class Game:
 
     def draw_setup(self):
         self.screen.fill((0, 0, 0))
-        msg = "Enter Port:" if self.state == STATE_HOST_SETUP else "Enter IP:"
+        if self.state == STATE_NAME_INPUT:
+            msg = "Enter Your Name:"
+        elif self.state == STATE_HOST_SETUP:
+            msg = "Enter Port:" 
+        else:
+            msg = "Enter IP:Port (e.g. 127.0.0.1:5555)"
+            
         text = self.font.render(msg, True, (255, 255, 255))
-        self.screen.blit(text, (self.width//2 - 50, 200))
+        self.screen.blit(text, (self.width//2 - 100, 200))
         
         input_s = self.font.render(self.input_text, True, (0, 255, 0))
-        self.screen.blit(input_s, (self.width//2 - 50, 240))
+        self.screen.blit(input_s, (self.width//2 - 100, 240))
         
-        hint = self.font.render("Press Enter to Start", True, (100, 100, 100))
-        self.screen.blit(hint, (self.width//2 - 60, 300))
+        hint = self.font.render("Press Enter to Confirm", True, (100, 100, 100))
+        self.screen.blit(hint, (self.width//2 - 80, 300))
+
+    def draw_lobby(self):
+        self.screen.fill((0, 0, 0))
+        title = self.font.render("LOBBY - Waiting for Players", True, (255, 255, 0))
+        self.screen.blit(title, (self.width//2 - 120, 50))
+        
+        # Display connected players
+        # For Host: uses self.snakes or self.network clients?
+        # self.snakes should be populated for Host.
+        # For Client: uses self.lobby_players (received from server)
+        
+        players_to_show = []
+        if self.is_server:
+            players_to_show = [{"name": s.name, "id": s.id} for s in self.snakes.values()]
+        else:
+            players_to_show = self.lobby_players if self.lobby_players else [{"name": "Connecting...", "id": -1}]
+            
+        for i, p in enumerate(players_to_show):
+             # Calculate color based on ID
+             pid = p['id']
+             if pid == -1:
+                 color = (255, 255, 255)
+             else:
+                 color_idx = pid % len(self.colors)
+                 color = self.colors[color_idx]
+                 
+             p_text = self.font.render(f"P{p['id']}: {p['name']}", True, color)
+             self.screen.blit(p_text, (self.width//2 - 50, 150 + i * 30))
+             
+        if self.is_server:
+            hint = self.font.render("Press ENTER to Start Game", True, (0, 255, 0))
+            self.screen.blit(hint, (self.width//2 - 100, 400))
+        else:
+            hint = self.font.render("Waiting for Host to Start...", True, (100, 100, 100))
+            self.screen.blit(hint, (self.width//2 - 100, 400))
 
     # Updated draw to handle states
     def draw(self):
         if self.state == STATE_MENU:
             self.draw_menu()
-        elif self.state in [STATE_HOST_SETUP, STATE_JOIN_SETUP]:
+        elif self.state in [STATE_HOST_SETUP, STATE_JOIN_SETUP, STATE_NAME_INPUT]:
             self.draw_setup()
+        elif self.state == STATE_LOBBY:
+            self.draw_lobby()
         else:
             self.screen.fill(tuple(self.config['colors']['background']))
             
