@@ -17,8 +17,10 @@ class Snake:
         self.body = [start_pos] # List of (x, y) tuples
         self.direction = Direction.RIGHT
         self.next_direction = Direction.RIGHT
+        self.next_direction = Direction.RIGHT
         self.grow_pending = 0
         self.speed_multiplier = 1.0
+        self.accelerating = False
         self.base_speed = config['game']['speed']
         
         self.window_width = config['window']['width']
@@ -80,7 +82,7 @@ class Snake:
                     if new_dir != self.direction:
                         self.next_direction = new_dir
 
-    def update(self):
+    def update(self, is_local=True):
         # Handle direction changes with grid snapping in pixel mode
         if self.pixel_mode:
             head_x, head_y = self.body[0]
@@ -181,15 +183,20 @@ class Snake:
             # Grid mode: direction updates happen instantly
             self.direction = self.next_direction
 
+            self.direction = self.next_direction
+        
         # Check for acceleration (hold key for current direction)
-        keys = pygame.key.get_pressed()
-        if ((self.direction == Direction.UP and keys[pygame.K_UP]) or
-            (self.direction == Direction.DOWN and keys[pygame.K_DOWN]) or
-            (self.direction == Direction.LEFT and keys[pygame.K_LEFT]) or
-            (self.direction == Direction.RIGHT and keys[pygame.K_RIGHT])):
-            self.speed_multiplier = 1.5
-        else:
-            self.speed_multiplier = 1.0
+        # BUG FIX: Only check keys if this snake is controlled locally
+        if is_local:
+            keys = pygame.key.get_pressed()
+            self.accelerating = False
+            if ((self.direction == Direction.UP and keys[pygame.K_UP]) or
+                (self.direction == Direction.DOWN and keys[pygame.K_DOWN]) or
+                (self.direction == Direction.LEFT and keys[pygame.K_LEFT]) or
+                (self.direction == Direction.RIGHT and keys[pygame.K_RIGHT])):
+                self.accelerating = True
+        
+        self.speed_multiplier = 1.5 if self.accelerating else 1.0
         
         head_x, head_y = self.body[0]
         dx, dy = self.direction.value

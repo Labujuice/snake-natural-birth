@@ -238,14 +238,20 @@ class Game:
                             # We need to manually trigger handle_input equivalent logic
                             # Or update snake class to accept abstract Direction
                             direction = Direction[direction_str]
-                            self.snakes[pid].next_direction = direction # Simplified, no safety check?
-                            # Better: use proper input handling to prevent 180 turns
-                            # Reuse logic...
-                            curr = self.snakes[pid].direction
-                            if (direction.value[0] * -1 != curr.value[0] or 
-                                direction.value[1] * -1 != curr.value[1]):
+                            # BUG FIX 2: Validate against *physical* direction (direction)
+                            # to firmly prevent 180 turns even with fast input queuing
+                            curr_dir = self.snakes[pid].direction
+                            
+                            # 180 degree check
+                            if (direction.value[0] * -1 != curr_dir.value[0] or 
+                                direction.value[1] * -1 != curr_dir.value[1]):
                                 self.snakes[pid].next_direction = direction
                                 
+                    elif event['type'] == 'accel':
+                        pid = event['player_id']
+                        if pid in self.snakes:
+                            self.snakes[pid].accelerating = event['state']
+
                     elif event['type'] == 'init':
                          # New player requested join (handshake part 2?)
                          pass
@@ -316,6 +322,23 @@ class Game:
                         if self.network.my_id is not None:
                             self.local_player_id = self.network.my_id
 
+
+        # Client-Side Dead Reckoning (Prediction)
+        # Run physics for all snakes to smooth out jitter
+        if self.network and not self.is_server and self.state == STATE_PLAYING and not self.paused:
+             for snake_id, snake in self.snakes.items():
+                  # For Client, 'is_local' means "Can I accelerate it?"
+                  # Only MY snake (local_player_id) should read MY keyboard.
+                  # Other snakes (remote) should just move at base speed.
+                  is_local = (snake_id == self.local_player_id)
+                  snake.update(is_local=is_local)
+                  
+                  # Check for acceleration state change to sync
+                  if is_local:
+                      if snake.accelerating != getattr(self, 'last_accel_state', False):
+                           self.last_accel_state = snake.accelerating
+                           self.network.send_input({"type": "accel", "state": snake.accelerating})
+
         # Update Logic (Server Only or Single Player)
         # Only run physics/logic if we are actually PLAYING
         if self.state == STATE_PLAYING and (not self.network or self.is_server):
@@ -323,7 +346,12 @@ class Game:
             dead_snakes = []
             
             for snake_id, snake in self.snakes.items():
-                snake.update()
+                # BUG FIX: Only allow acceleration input for local player
+                # On Server: Local is ID 0. Others are remote.
+                # On Client (if we ran this block, which we usually don't): Local is self.local_player_id.
+                
+                is_local = (snake_id == self.local_player_id)
+                snake.update(is_local=is_local)
                 
                 # Check collision (Walls and Self)
                 if snake.check_collision():
