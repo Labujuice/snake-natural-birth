@@ -23,6 +23,30 @@
 - [x] 按下L會自動暫停並且開啟 Leaderboard
 - [x] 蛇每次吃一個食物, 長度只會增加一格
 
+- 網路連線遊戲
+  - [x] 增加主畫面, 單人遊戲、連線遊戲
+  - [x] 當單人遊戲時直接開始
+  - [x] 當連線遊戲時, 可以選 server or client
+  - [x] 當server時, 需要指定自己的port與本地端的玩家名字. 確認開始後打開 TPC Server 待client連線使用
+  - [x] 當client時, 需要指定server的ip和port並且輸入本地端的玩家名字. 確認開始後打開 TPC Client 連線到server
+  - [x] 需要制定一個簡單的通訊協定, 用來傳遞遊戲的狀態, 例如蛇的移動方向, 食物的位置, 排行榜等
+  - [x] 連線遊戲最多支援4人
+  - [x] 每個玩家的蛇顏色不同
+  - [x] 每個玩家的蛇速度不同
+  - [x] 每個玩家的蛇長度不同
+  - [x] 每個玩家的蛇的起始位置不同
+  - [x] 每個玩家的蛇的起始方向不同
+  - [x] 連入server時可以看到自己的顏色
+  - [x] 連入server時可以看到其他玩家的顏色與名字
+  - [x] 遊戲開始進行時玩家名字與蛇的身體會同步顯示於畫面中
+  - [x] 當最後一個人往生之後遊戲結束
+  - [x] BUG: Client蛇居然可以反方向走？
+  - [x] BUG: Client蛇會被server按鈕加速(同方向時)
+  - [x] BUG: Client蛇可以違背遊戲原本的設定, 變成可以直接反向移動
+  - [x] BUG: Client畫面看起來頓挫感較強
+  - [x] Server or Client死掉之後請停留在遊戲畫面顯示分數, 等待其他玩家結束
+  - [x] 所有人都死掉之後, 請Server更新自己的 leaderboard
+
 
 
 ## Requirement generate by progress tracking

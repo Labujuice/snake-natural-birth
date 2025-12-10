@@ -8,14 +8,20 @@ class Direction(Enum):
     RIGHT = (1, 0)
 
 class Snake:
-    def __init__(self, config, start_pos):
+    def __init__(self, config, start_pos, snake_id=0, name="Player"):
+        self.id = snake_id
+        self.name = name
         self.block_size = config['game']['block_size']
         self.color = tuple(config['colors']['snake'])
+        # Allow custom color per snake later
         self.body = [start_pos] # List of (x, y) tuples
         self.direction = Direction.RIGHT
         self.next_direction = Direction.RIGHT
+        self.next_direction = Direction.RIGHT
         self.grow_pending = 0
         self.speed_multiplier = 1.0
+        self.accelerating = False
+        self.score = 0
         self.base_speed = config['game']['speed']
         
         self.window_width = config['window']['width']
@@ -30,6 +36,31 @@ class Snake:
             # Initial length is 1 block, so we need enough points to cover 1 block size
             # But initially just one point is fine, it will grow
             pass
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'body': self.body,
+            'direction': self.direction.name,
+            'color': self.color,
+            'score': len(self.body) # Simple score approximation or track separately
+        }
+
+    @staticmethod
+    def from_dict(data, config):
+        snake = Snake(config, tuple(data['body'][0]), data['id'], data['name'])
+        snake.update_from_dict(data)
+        return snake
+
+    def update_from_dict(self, data):
+        self.body = [tuple(p) for p in data['body']]
+        self.direction = Direction[data['direction']]
+        self.color = tuple(data['color'])
+        self.id = data['id']
+        self.name = data['name']
+
+
 
     def handle_input(self, event):
         if event.type == pygame.KEYDOWN:
@@ -52,7 +83,7 @@ class Snake:
                     if new_dir != self.direction:
                         self.next_direction = new_dir
 
-    def update(self):
+    def update(self, is_local=True):
         # Handle direction changes with grid snapping in pixel mode
         if self.pixel_mode:
             head_x, head_y = self.body[0]
@@ -153,15 +184,20 @@ class Snake:
             # Grid mode: direction updates happen instantly
             self.direction = self.next_direction
 
+            self.direction = self.next_direction
+        
         # Check for acceleration (hold key for current direction)
-        keys = pygame.key.get_pressed()
-        if ((self.direction == Direction.UP and keys[pygame.K_UP]) or
-            (self.direction == Direction.DOWN and keys[pygame.K_DOWN]) or
-            (self.direction == Direction.LEFT and keys[pygame.K_LEFT]) or
-            (self.direction == Direction.RIGHT and keys[pygame.K_RIGHT])):
-            self.speed_multiplier = 1.5
-        else:
-            self.speed_multiplier = 1.0
+        # BUG FIX: Only check keys if this snake is controlled locally
+        if is_local:
+            keys = pygame.key.get_pressed()
+            self.accelerating = False
+            if ((self.direction == Direction.UP and keys[pygame.K_UP]) or
+                (self.direction == Direction.DOWN and keys[pygame.K_DOWN]) or
+                (self.direction == Direction.LEFT and keys[pygame.K_LEFT]) or
+                (self.direction == Direction.RIGHT and keys[pygame.K_RIGHT])):
+                self.accelerating = True
+        
+        self.speed_multiplier = 1.5 if self.accelerating else 1.0
         
         head_x, head_y = self.body[0]
         dx, dy = self.direction.value
