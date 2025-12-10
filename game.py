@@ -49,14 +49,24 @@ class Game:
             (255, 255, 0),  # Yellow (P4)
         ]
 
-    def reset_game(self, full_reset=False):
+    def reset_game(self, full_reset=False, soft_reset=False):
         if full_reset:
             self.state = STATE_MENU
             self.network = None
             self.is_server = False
         
+        # Soft reset: Keep network, clear game state
+        
         self.snakes = {}
         self.local_player_id = 0
+        if self.network:
+            if self.is_server:
+                self.local_player_id = 0
+            elif self.network.my_id is not None:
+                self.local_player_id = self.network.my_id
+
+        # Update snake init to use correct ID if creating immediately
+        # But for Lobby, we wait for update loop.
         
         # Default start pos, will be updated by server or logic
         start_pos = (self.width // 2, self.height // 2)
@@ -69,20 +79,24 @@ class Game:
         if self.local_player_id in self.snakes:
             self.food.spawn(self.snakes[self.local_player_id].body)
             
-        self.score = 0
+        self.score = 0 # This line is removed as per instruction 1, score is now in Snake object
         self.game_over = False
         self.paused = False
+        self.spectating = False
+        self.dead_players = set() # Track dead players to prevent respawn
         self.input_active = False # For leaderboard or IP entry
         self.input_text = ""
         self.showing_leaderboard = False
         
-        # Menu/Connection UI vars
-        self.menu_options = ["Single Player", "Host Game", "Join Game", "Quit"]
-        self.menu_index = 0
-        self.connection_ip = "127.0.0.1"
-        self.connection_port = "5555"
-        self.player_name = "Player"
-        self.lobby_players = [] # List of strings "ID: Name"
+        # Menu/Connection UI vars (Keep if soft reset?)
+        if not soft_reset:
+             self.menu_options = ["Single Player", "Host Game", "Join Game", "Quit"]
+             self.menu_index = 0
+             self.connection_ip = "127.0.0.1"
+             self.connection_port = "5555"
+             self.player_name = "Player"
+             self.lobby_players = [] # List of strings "ID: Name"
+        self.spectating = False
 
     def run(self):
         while True:
@@ -192,7 +206,18 @@ class Game:
                                     self.input_text += event.unicode
                         elif event.key == pygame.K_r:
                             if self.network:
-                                pass # Remote restart not implemented yet
+                                if self.is_server:
+                                    # Server Restart -> Broadcast and return to Lobby
+                                    self.network.send_update({"type": "restart"})
+                                    self.reset_game(soft_reset=True)
+                                    self.state = STATE_LOBBY
+                                    
+                                    # Fix: Re-add Host Snake after soft reset so it appears in Lobby
+                                    start_pos = (self.width // 2, self.height // 2)
+                                    self.snakes[0] = Snake(self.config, start_pos, 0, self.player_name)
+                                    self.snakes[0].color = self.colors[0]
+                                    
+                                    # Clients will rejoin via update loop logic (polling network)
                             else:
                                 self.reset_game() # Restart single player
                         elif event.key == pygame.K_ESCAPE:
@@ -263,7 +288,7 @@ class Game:
                     connected_ids = list(self.network.clients.keys())
                 
                 for pid in connected_ids:
-                    if pid not in self.snakes:
+                    if pid not in self.snakes and pid not in self.dead_players:
                         # Spawn new snake
                         start_pos = (self.width // 2 + pid * 20, self.height // 2 + pid * 20) # Offset
                         name = f"Player {pid}"
@@ -295,6 +320,10 @@ class Game:
                         self.lobby_players = event['players']
                     elif event['type'] == 'start_game':
                         self.state = STATE_PLAYING
+                    elif event['type'] == 'restart':
+                        # Host reset game
+                        self.reset_game(soft_reset=True)
+                        self.state = STATE_LOBBY
                     elif event['type'] == 'state':
                         # Update Snakes
                         server_snakes = event['snakes']
@@ -313,14 +342,23 @@ class Game:
                         to_remove = [k for k in self.snakes if k not in current_ids]
                         for k in to_remove:
                             del self.snakes[k]
+                        
+                        # Check if I died (was in game, now not)
+                        if self.local_player_id not in self.snakes and self.state == STATE_PLAYING:
+                            self.spectating = True
                             
                         # Update Food
                         self.food.positions = [tuple(p) for p in event['food']]
-                        self.score = event['scores'].get(str(self.local_player_id), 0)
+                        # BUG FIX: If dead, score is missing from update. Keep last known score.
+                        self.score = event['scores'].get(str(self.local_player_id), self.score)
                         
-                        # Update my ID if just assigned (handled in network.py but we need to know local_player_id)
+                        # Update my ID if just assigned
                         if self.network.my_id is not None:
                             self.local_player_id = self.network.my_id
+
+                    elif event['type'] == 'game_over':
+                         self.game_over = True
+                         self.check_leaderboard()
 
 
         # Client-Side Dead Reckoning (Prediction)
@@ -388,9 +426,14 @@ class Game:
                 if eaten_pos:
                     self.food.remove(eaten_pos)
                     snake.grow()
+                    self.food.remove(eaten_pos)
+                    snake.grow()
                     # Score update
+                    # Fix: Update the snake's score object, then local score if it's us
+                    snake.score += self.config['game']['score_per_food']
+                    
                     if snake_id == self.local_player_id:
-                         self.score += self.config['game']['score_per_food']
+                         self.score = snake.score
                     
                     # Spawn new food
                     all_bodies = []
@@ -405,19 +448,26 @@ class Game:
             # Handle deaths
             for snake_id in dead_snakes:
                 if snake_id == self.local_player_id:
-                    self.game_over = True
-                    self.check_leaderboard() # Only save score for local player?
+                    if not self.network:
+                        # Single Player -> Immediate Game Over
+                        self.game_over = True
+                        self.check_leaderboard() 
+                    else:
+                        # Multiplayer -> Spectate
+                        self.spectating = True
                 
-                # Respawn remote players? Or Permanent Death? requirements say "Last man standing ends game"
-                # "当最後一個人往生之後遊戲結束"
+                # Remove from game
                 if snake_id in self.snakes:
-                    del self.snakes[snake_id] # Eliminate them
-            
-            # Check Last Man Standing (if MP)
-            if self.network and len(self.snakes) <= 1:
-                # If only 1 left and we had more than 1 start... 
-                # For now just let it run until they die too or manually quit.
-                pass
+                    del self.snakes[snake_id]
+                    self.dead_players.add(snake_id)
+
+            # Check Game Over (Server)
+            if self.is_server and self.network and self.state == STATE_PLAYING:
+                 if len(self.snakes) == 0:
+                     # All dead
+                     self.game_over = True
+                     self.network.send_update({"type": "game_over"})
+                     self.check_leaderboard()
             
             # Broadcast State (Server)
             if self.is_server and self.network:
@@ -425,7 +475,10 @@ class Game:
                     "type": "state",
                     "snakes": [s.to_dict() for s in self.snakes.values()],
                     "food": self.food.positions,
-                    "scores": {str(sid): len(s.body) for sid, s in self.snakes.items()} # Or separate score dict
+                    "type": "state",
+                    "snakes": [s.to_dict() for s in self.snakes.values()],
+                    "food": self.food.positions,
+                    "scores": {str(sid): s.score for sid, s in self.snakes.items()} # Fix: Broadcast actual scores
                 }
                 self.network.send_update(state)
 
@@ -595,6 +648,10 @@ class Game:
             # Draw Score
             score_text = self.font.render(f"Score: {self.score}", True, tuple(self.config['colors']['text']))
             self.screen.blit(score_text, (10, 10))
+            
+            if self.spectating and not self.game_over:
+                spec_text = self.font.render("SPECTATING - Waiting for others...", True, (200, 200, 200))
+                self.screen.blit(spec_text, (self.width//2 - 150, 50))
             
             if self.paused:
                 if self.showing_leaderboard:

@@ -21,6 +21,7 @@ class Snake:
         self.grow_pending = 0
         self.speed_multiplier = 1.0
         self.accelerating = False
+        self.score = 0
         self.base_speed = config['game']['speed']
         
         self.window_width = config['window']['width']

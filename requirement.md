@@ -44,6 +44,8 @@
   - [x] BUG: Client蛇會被server按鈕加速(同方向時)
   - [x] BUG: Client蛇可以違背遊戲原本的設定, 變成可以直接反向移動
   - [x] BUG: Client畫面看起來頓挫感較強
+  - [x] Server or Client死掉之後請停留在遊戲畫面顯示分數, 等待其他玩家結束
+  - [x] 所有人都死掉之後, 請Server更新自己的 leaderboard
 
 
 
